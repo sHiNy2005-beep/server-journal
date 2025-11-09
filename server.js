@@ -1,9 +1,11 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const app = express();
 
-app.use(express.static('public'));
+app.use(express.json());
 app.use(cors());
+app.use(express.static('public'));
 
 app.use((req, res, next) => {
   console.log(new Date().toISOString(), req.method, req.url);
@@ -23,11 +25,23 @@ const embeddedJournal = {
   ]
 };
 
-app.get('/', (req, res) => res.send('root OK'));
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>Server Journal API</h1>
+    <p>Welcome to the Journal API. Available routes:</p>
+    <ul>
+      <li><a href="/api/journalEntries">/api/journalEntries</a> — returns all journal entries</li>
+    </ul>
+  `);
+});
 
 app.get('/api/journalEntries', (req, res) => {
   res.json(embeddedJournal);
 });
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`I am listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
