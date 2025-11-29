@@ -1,31 +1,15 @@
 {
   "entries": [
     {
-      "title": "testing",
-      "date": "2025-11-16T00:00:00.000Z",
-      "summary": "sucks",
-      "mood": "hate",
-      "img_name": "",
-      "_id": "1763328173489"
-    },
-    {
-      "title": "Stressful workday",
-      "date": "2025-11-16T00:00:00.000Z",
-      "summary": "Trying to get all assignments done",
+      "title": "-",
+      "date": "2025-11-19T00:00:00.000Z",
+      "summary": "hi test pls",
       "mood": "anxious",
       "img_name": "",
-      "_id": "1763329238225"
+      "_id": "1763585574850"
     },
     {
-      "title": "does it work?",
-      "date": "2025-11-16T00:00:00.000Z",
-      "summary": "none",
-      "mood": "sad",
-      "img_name": "",
-      "_id": "1763334978875"
-    },
-    {
-      "title": "Wafflehouse date",
+      "title": "Wafflehouse date.",
       "date": "2025-11-16T00:00:00.000Z",
       "summary": "Had breakfast with a friend",
       "mood": "happy",
@@ -42,8 +26,8 @@
     },
     {
       "_id": "7",
-      "title": "Midterm Stress",
-      "date": "2025-10-01",
+      "title": "Midterm Stress.",
+      "date": "2025-10-01T00:00:00.000Z",
       "img_name": "json/images/midterm-exam.png",
       "mood": "Stressed",
       "summary": "Studying for midterms, I hated the math class."
@@ -83,10 +67,10 @@
     {
       "_id": "2",
       "title": "Busy Study Day",
-      "date": "2025-09-26",
+      "date": "2025-09-26T00:00:00.000Z",
       "img_name": "json/images/midterm-exam.png",
       "mood": "Productive",
-      "summary": "Had three classes and a project meeting. Stayed organized and motivated."
+      "summary": "Had three classes and a project meeting. Stayed organized."
     },
     {
       "_id": "1",

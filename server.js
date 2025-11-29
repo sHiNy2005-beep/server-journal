@@ -51,7 +51,12 @@ function readEntries() {
 }
 
 function writeEntries(entries) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ entries }, null, 2), 'utf8');
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ entries }, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to write entries file:', err);
+    throw err;
+  }
 }
 
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -74,7 +79,6 @@ const entrySchema = Joi.object({
   img_name: Joi.string().allow('').max(1000)
 });
 
-
 app.get('/', (req, res) => {
   res.send(`
     <h1>Journal Server</h1>
@@ -91,7 +95,7 @@ app.get('/api/journalEntries', (req, res) => {
 
 app.get('/api/journalEntries/:id', (req, res) => {
   const entries = readEntries();
-  const entry = entries.find(e => e._id === req.params.id);
+  const entry = entries.find(e => String(e._id) === String(req.params.id));
   if (!entry) return res.status(404).json({ message: 'Not found' });
   res.json(entry);
 });
@@ -107,8 +111,18 @@ app.post('/api/journalEntries', upload.single('img'), (req, res) => {
     };
     const { error, value } = entrySchema.validate(payload, { convert: true, stripUnknown: true });
     if (error) {
-      if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
-      return res.status(400).json({ message: error.details[0].message });
+      if (req.file) {
+        try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+      }
+      // Return Joi-style details so frontend can map field errors
+      return res.status(400).json({
+        message: 'Validation failed',
+        details: error.details.map(d => ({
+          message: d.message,
+          path: d.path || [],
+          context: d.context || {}
+        }))
+      });
     }
     const entries = readEntries();
     const newEntry = { ...value, _id: `${Date.now()}` };
@@ -116,7 +130,8 @@ app.post('/api/journalEntries', upload.single('img'), (req, res) => {
     entries.sort((a, b) => new Date(b.date) - new Date(a.date));
     writeEntries(entries);
     return res.status(201).json(newEntry);
-  } catch {
+  } catch (err) {
+    console.error('POST /api/journalEntries error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -124,37 +139,57 @@ app.post('/api/journalEntries', upload.single('img'), (req, res) => {
 app.put('/api/journalEntries/:id', upload.single('img'), (req, res) => {
   try {
     const entries = readEntries();
-    const idx = entries.findIndex(e => e._id === req.params.id);
+    const idx = entries.findIndex(e => String(e._id) === String(req.params.id));
     if (idx === -1) {
-      if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
+      if (req.file) {
+        try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+      }
       return res.status(404).json({ message: 'Not found' });
     }
     const existing = entries[idx];
+
     const payload = {
-      title: req.body.title ?? existing.title,
-      date: req.body.date ?? existing.date,
-      summary: req.body.summary ?? existing.summary,
-      mood: (req.body.mood !== undefined) ? req.body.mood : existing.mood,
-img_name: req.file
-  ? path.join('uploads', req.file.filename).replace(/\\/g, '/')
-  : req.body.img_name
-  ? req.body.img_name
-  : existing.img_name || ''
+      title: (req.body.title !== undefined) ? req.body.title : existing.title,
+      date: (req.body.date !== undefined) ? req.body.date : existing.date,
+      summary: (req.body.summary !== undefined) ? req.body.summary : existing.summary,
+      mood: (req.body.mood !== undefined) ? req.body.mood : (existing.mood || ''),
+      img_name: req.file
+        ? path.join('uploads', req.file.filename).replace(/\\/g, '/')
+        : (req.body.img_name !== undefined ? req.body.img_name : (existing.img_name || ''))
     };
+
     const { error, value } = entrySchema.validate(payload, { convert: true, stripUnknown: true });
     if (error) {
-      if (req.file) fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename));
-      return res.status(400).json({ message: error.details[0].message });
+      if (req.file) {
+        try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+      }
+      // Return Joi-style details so frontend can map field errors
+      return res.status(400).json({
+        message: 'Validation failed',
+        details: error.details.map(d => ({
+          message: d.message,
+          path: d.path || [],
+          context: d.context || {}
+        }))
+      });
     }
-    if (req.file && existing.img_name && existing.img_name.startsWith('uploads/')) {
-      fs.unlinkSync(path.join(__dirname, existing.img_name));
+
+    if (req.file && existing.img_name && typeof existing.img_name === 'string' && existing.img_name.startsWith('uploads/')) {
+      const oldPath = path.join(__dirname, existing.img_name);
+      try {
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      } catch (err) {
+        console.warn('Failed to remove old uploaded file', oldPath, err);
+      }
     }
-    const updated = { ...existing, ...value };
+
+    const updated = { ...existing, ...value, _id: existing._id };
     entries[idx] = updated;
     entries.sort((a, b) => new Date(b.date) - new Date(a.date));
     writeEntries(entries);
     return res.json(updated);
-  } catch {
+  } catch (err) {
+    console.error('PUT /api/journalEntries/:id error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -162,18 +197,27 @@ img_name: req.file
 app.delete('/api/journalEntries/:id', (req, res) => {
   try {
     const entries = readEntries();
-    const idx = entries.findIndex(e => e._id === req.params.id);
+    const idx = entries.findIndex(e => String(e._id) === String(req.params.id));
     if (idx === -1) return res.status(404).json({ message: 'Not found' });
     const [removed] = entries.splice(idx, 1);
-    if (removed.img_name && removed.img_name.startsWith('uploads/')) {
-      fs.unlinkSync(path.join(__dirname, removed.img_name));
+
+    if (removed.img_name && typeof removed.img_name === 'string' && removed.img_name.startsWith('uploads/')) {
+      const filePath = path.join(__dirname, removed.img_name);
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (err) {
+        console.warn('Failed to remove uploaded file during delete:', filePath, err);
+      }
     }
+
     writeEntries(entries);
-    return res.json({ message: 'Deleted' });
-  } catch {
+    return res.json({ message: 'Deleted', deletedId: removed._id });
+  } catch (err) {
+    console.error('DELETE /api/journalEntries/:id error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
 
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+//208
