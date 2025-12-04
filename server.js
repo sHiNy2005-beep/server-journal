@@ -61,10 +61,7 @@ app.get("/api/journalEntries",async(req, res)=>{
     res.send(journals);
 }); //added now 
 
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ entries: embeddedJournal.entries }, null, 2), 'utf8');
-}
-
+/*
 function readEntries() {
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
@@ -83,6 +80,7 @@ function writeEntries(entries) {
     throw err;
   }
 }
+  */
 
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -113,6 +111,7 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
+/*
 app.get('/api/journalEntries', (req, res) => {
   const entries = readEntries();
   res.json(entries);
@@ -124,8 +123,9 @@ app.get('/api/journalEntries/:id', (req, res) => {
   if (!entry) return res.status(404).json({ message: 'Not found' });
   res.json(entry);
 });
+*/
 
-app.post('/api/journalEntries', upload.single('img'), (req, res) => {
+app.post('/api/journalEntries', upload.single('img'),async (req, res) => {
   try {
     const payload = {
       title: req.body.title,
@@ -137,7 +137,7 @@ app.post('/api/journalEntries', upload.single('img'), (req, res) => {
     const { error, value } = entrySchema.validate(payload, { convert: true, stripUnknown: true });
     if (error) {
       if (req.file) {
-        try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+        try { await fs.promises.unlink(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
       }
       return res.status(400).json({
         message: 'Validation failed',
@@ -148,29 +148,26 @@ app.post('/api/journalEntries', upload.single('img'), (req, res) => {
         }))
       });
     }
-    const entries = readEntries();
-    const newEntry = { ...value, _id: `${Date.now()}` };
-    entries.push(newEntry);
-    entries.sort((a, b) => new Date(b.date) - new Date(a.date));
-    writeEntries(entries);
-    return res.status(201).json(newEntry);
+    const entries =  new JournalEntry(value);
+    const saved = await entries.save();
+    return res.status(201).json(saved);
+  
   } catch (err) {
     console.error('POST /api/journalEntries error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
 
-app.put('/api/journalEntries/:id', upload.single('img'), (req, res) => {
+app.put('/api/journalEntries/:id', upload.single('img'), async (req, res) => {
   try {
-    const entries = readEntries();
-    const idx = entries.findIndex(e => String(e._id) === String(req.params.id));
-    if (idx === -1) {
+    const existing = await Journal.findById(req.params.id).lean();
+    if (!existing) {
       if (req.file) {
-        try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+        try { await fs.promises.unlink(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
       }
       return res.status(404).json({ message: 'Not found' });
     }
-    const existing = entries[idx];
+    //nst existing = entries[idx];
 
     const payload = {
       title: (req.body.title !== undefined) ? req.body.title : existing.title,
@@ -206,34 +203,41 @@ app.put('/api/journalEntries/:id', upload.single('img'), (req, res) => {
       }
     }
 
-    const updated = { ...existing, ...value, _id: existing._id };
-    entries[idx] = updated;
-    entries.sort((a, b) => new Date(b.date) - new Date(a.date));
-    writeEntries(entries);
-    return res.json(updated);
+     const updatedDoc = await JournalEntry.findByIdAndUpdate(
+      req.params.id,
+      { $set: value },
+      { new: true, runValidators: false } 
+    ).lean();
+   if (!updatedDoc) {
+      return res.status(404).json({ message: "We couldn't locate the entry to edit" });
+    }
+
+    return res.json(updatedDoc);
   } catch (err) {
     console.error('PUT /api/journalEntries/:id error:', err);
+    if (req.file) {
+      try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch (_) { /* ignore */ }
+    }
     return res.status(500).json({ message: 'Server error' });
   }
 });
 
-app.delete('/api/journalEntries/:id', (req, res) => {
+app.delete('/api/journalEntries/:id', async (req, res) => {
   try {
-    const entries = readEntries();
-    const idx = entries.findIndex(e => String(e._id) === String(req.params.id));
-    if (idx === -1) return res.status(404).json({ message: 'Not found' });
-    const [removed] = entries.splice(idx, 1);
+    const house = await Journal.findByIdAndDelete(req.params.id);
+    if (!house) {
+       return res.status(404).json({ message: 'Not found' });
+    }
 
     if (removed.img_name && typeof removed.img_name === 'string' && removed.img_name.startsWith('uploads/')) {
       const filePath = path.join(__dirname, removed.img_name);
       try {
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+       await fs.promises.access(filePath, fs.constants.F_OK); // no idea what this is  it just added on 
+       await fs.promises.unlink(filePath);
       } catch (err) {
         console.warn('Failed to remove uploaded file during delete:', filePath, err);
       }
     }
-
-    writeEntries(entries);
     return res.json({ message: 'Deleted', deletedId: removed._id });
   } catch (err) {
     console.error('DELETE /api/journalEntries/:id error:', err);
