@@ -54,10 +54,10 @@ const journalSchema = new mongoose.Schema({
   summary: String
 }); // added now 
 
-const Journal = mongoose.model("embeddedJournal", journalSchema);
+const JournalEntry  = mongoose.model("embeddedJournal", journalSchema);
 
 app.get("/api/journalEntries",async(req, res)=>{
-    const journals = await Journal.find();
+    const journals = await JournalEntry.find();
     res.send(journals);
 }); //added now 
 
@@ -148,8 +148,9 @@ app.post('/api/journalEntries', upload.single('img'),async (req, res) => {
         }))
       });
     }
-    const entries =  new JournalEntry(value);
-    const saved = await entries.save();
+    // const entries =  new JournalEntry(value); added new here 
+    const entry = new JournalEntry(value);
+    const saved = await entry.save();
     return res.status(201).json(saved);
   
   } catch (err) {
